@@ -1,22 +1,24 @@
-Name:
-UWNetID:
-
-Name:
-UWNetID:
-
-Name:
-UWNetID:
+Name: Jonathan W
+UWNetID: jono1231
 
 Instructions to reproduce the results:
-  TODO
+  To execute the reno tests, run:
+  sudo ./run.sh
+  this should output all the queue stuff in the folder bb-q[size]-reno directories
+
+  likewise, to execute the bbr tests, run:
+  sudo ./run_bbr.sh
+  this should output all the queue stuff in the folder bb-q[size]-bbr directories
 
 Answers to the questions:
 Part 2
-  1. TODO
-  2. TODO
-  3. TODO
-  4. TODO
+  1. Q = 20: Mean: 0.264, SDev: 0.34. Q=100: Mean: 1.04, SDev: 0.224 
+  2. We see this difference because of the bufferbloat problem. In our tests, a smaller queue size of 20 leads to quicker filling and emptying of the queue, leading to more packet drops which causes relatively small latency with frequent multiplicative decreases for a stable sending rate. By contrast, a larger queue size of 100 takes longer to fill up, meaning less packet drops. This resilts in higher latency and variable sending rates with fewer multiplicative decreases.
+  3. The max transit queue length should is 1000. Assuming a 100Mb/s drain rate and given a MTU of 1500B, the longest wait time for a packet should be (total - 1) * 1500B/(100 * 125000) = 999 * 0.00012 ~ 0.12 seconds to leave the queue
+  4. With a queue size of 20, we have very little (max ~400ms) of latency. However, with a queue size of 100, latency is consistently above 750ms (with a max of ~1600ms). This means that for Reno, the larger the queue size, the larger the RTT time
+  5. You can use TCP BBR (as seen in part 3) to mitigate the bufferbloat problem, since it dynamically adjusts its sending rate based on the estimated bandwidth and round-trip time. This prevents excessive queueing and as a result reduces latency. Additionally, we could also just use smaller queue sizes. As seen above, latency is reduced when queue size is reduced.
 Part 3
-  1. TODO
-  2. TODO
-  3. TODO
+  1. Q = 20: Mean: 0.138, SDev: 0.11. Q=100: Mean: 0.143, SDev: 0.126 
+  2. A queue length of 100 had almost the same average fetch time as a queue of length 20. This is much different from part 2, where queue lengths of 100 had almost 4x the average fetch time compared to queue length of 20.
+  3. Part 2 graphs almost instantly hit the maximum queue size and usually will stay around the maximum for the whole time. By contrast, the bbr (part 3) queue graphs hit the maximum queue size but then sharply decrease to around the middle of the maximum queue size
+  4. In this case, yes. according to the queue graphs, there is almost always a spot for a new packet to be inserted into the queue

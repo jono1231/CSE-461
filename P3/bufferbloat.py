@@ -1,5 +1,5 @@
 from mininet.topo import Topo
-from mininet.node import CPULimitedHost
+from mininet.node import CPULimitedHost, OVSBridge
 from mininet.link import TCLink
 from mininet.net import Mininet
 from mininet.log import lg, info
@@ -16,6 +16,10 @@ from monitor import monitor_qlen
 import sys
 import os
 import math
+
+# Forgot IP() method was a thing :skull:
+# H1IP = "10.10.10.10"
+# H2IP = "10.10.10.11"
 
 parser = ArgumentParser(description="Bufferbloat tests")
 parser.add_argument('--bw-host', '-B',
@@ -63,21 +67,27 @@ class BBTopo(Topo):
 
     def build(self, n=2):
         # TODO: create two hosts
+        h1 = self.addHost('h1')
+        h2 = self.addHost('h2')
 
         # Here I have created a switch.  If you change its name, its
         # interface names will change from s0-eth1 to newname-eth1.
-        switch = self.addSwitch('s0')
+        switch = self.addSwitch('s0', cls=OVSBridge)
 
         # TODO: Add links with appropriate characteristics
+        # Add links
+        self.addLink(h1, switch, bw=args.bw_host, delay=args.delay)
+        self.addLink(switch, h2, bw=args.bw_net, delay=args.delay, max_queue_size=args.maxq)
 
 # Simple wrappers around monitoring utilities.  You are welcome to
 # contribute neatly written (using classes) monitoring scripts for
 # Mininet!
 
 def start_iperf(net):
+    print("Starting iperf server...")
+
     h1 = net.get('h1')
     h2 = net.get('h2')
-    print("Starting iperf server...")
     # For those who are curious about the -w 16m parameter, it ensures
     # that the TCP flow is not receiver window limited.  If it is,
     # there is a chance that the router buffer may not get filled up.
@@ -85,7 +95,8 @@ def start_iperf(net):
 
     # TODO: Start the iperf client on h1.  Ensure that you create a
     # long lived TCP flow.
-    # client = ... 
+    client = h1.popen("iperf -t %s -c %s" % (args.time, h2.IP()))
+    print("Iperf done")
 
 def start_qmon(iface, interval_sec=0.1, outfile="q.txt"):
     monitor = Process(target=monitor_qlen,
@@ -97,16 +108,30 @@ def start_ping(net):
     # TODO: Start a ping train from h1 to h2 (or h2 to h1, does it
     # matter?)  Measure RTTs every 0.1 second.  Read the ping man page
     # to see how to do this.
-
+    print("Starting ping...")
+    h1 = net.get('h1')
+    h2 = net.get('h2')
+    popen = h1.popen("ping -i 0.1 %s > %s/ping.txt" % (h2.IP(), args.dir), shell=True)
+    print("Done with ping...")
     # Hint: Use host.popen(cmd, shell=True).  If you pass shell=True
     # to popen, you can redirect cmd's output using shell syntax.
     # i.e. ping ... > /path/to/ping.
-    pass
+
+def curl_req(net):
+    h1 = net.get('h1')
+    h2 = net.get('h2')
+    # I couldnt get string formatting to work here I think im just dumb
+    proc = h2.popen("curl -o /dev/null -s -w %{time_total} " + str(h1.IP()) + "/index.html", shell=True, text=True, stdout=PIPE)
+    output = proc.stdout.readline()
+    # print(output)
+    return(float(output))
 
 def start_webserver(net):
+    print("Starting webserver...")
     h1 = net.get('h1')
-    proc = h1.popen("python http/webserver.py", shell=True)
+    proc = h1.popen("sudo python3 http/webserver.py", shell=True)
     sleep(1)
+    print("Done with webserver...")
     return [proc]
 
 def bufferbloat():
@@ -116,6 +141,7 @@ def bufferbloat():
     topo = BBTopo()
     net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
     net.start()
+
     # This dumps the topology and how nodes are interconnected through
     # links.
     dumpNodeConnections(net.hosts)
@@ -131,7 +157,11 @@ def bufferbloat():
                       outfile='%s/q.txt' % (args.dir))
 
     # TODO: Start iperf, webservers, etc.
-    # start_iperf(net)
+    start_iperf(net)
+    start_ping(net)
+    start_webserver(net)
+
+    # CLI(net)
 
     # TODO: measure the time it takes to complete webpage transfer
     # from h1 to h2 (say) 3 times.  Hint: check what the following
@@ -144,9 +174,14 @@ def bufferbloat():
     # Hint: have a separate function to do this and you may find the
     # loop below useful.
     start_time = time()
+    list = []
+    
     while True:
         # do the measurement (say) 3 times.
         sleep(5)
+        list.append(curl_req(net))
+        list.append(curl_req(net))
+        list.append(curl_req(net))
         now = time()
         delta = now - start_time
         if delta > args.time:
@@ -156,6 +191,11 @@ def bufferbloat():
     # TODO: compute average (and standard deviation) of the fetch
     # times.  You don't need to plot them.  Just note it in your
     # README and explain.
+    mean = sum(list) / len(list) 
+    variance = sum([((x - mean) ** 2) for x in list]) / len(list)
+
+    print("mean: " + str(mean))
+    print("stdev: " + str(math.sqrt(variance)))
 
     # Hint: The command below invokes a CLI which you can use to
     # debug.  It allows you to run arbitrary commands inside your
@@ -170,3 +210,4 @@ def bufferbloat():
 
 if __name__ == "__main__":
     bufferbloat()
+
